@@ -356,6 +356,52 @@ class T(unittest.TestCase):
         for key in ("gate", "tier", "passed", "failed", "findings", "paramsHash"):
             self.assertIn(key, payload)
 
+    # ------------------------------------------------------- 影响面 / 发布
+
+    def test_impact_lists_docs_and_units(self):
+        boot(self.root, git=True)
+        fill_params(self.root)
+        add_unit(self.root)
+        commit_all(self.root)
+        (self.root / "apps" / "algo" / "src" / "extra.py").write_text(HEADER, encoding="utf-8")
+        r = run_py(self.root, "impact.py", self.root)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("docs/parts/algo.md", r.stdout)
+        self.assertIn("algo/sortTask", r.stdout)
+
+    def test_publish_dry_run_passes_on_clean_repo(self):
+        boot(self.root, git=True)
+        commit_all(self.root)
+        r = run_py(self.root, "publish.py", self.root, "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_publish_blocks_dirty_tree(self):
+        boot(self.root, git=True)
+        commit_all(self.root)
+        (self.root / "x.txt").write_text("x", encoding="utf-8")
+        r = run_py(self.root, "publish.py", self.root, "--dry-run")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("未提交", r.stdout)
+
+    def test_publish_blocks_secret(self):
+        boot(self.root, git=True)
+        (self.root / "leak.md").write_text("token: ghp_abcdefghijklmnopqrst", encoding="utf-8")
+        commit_all(self.root)
+        r = run_py(self.root, "publish.py", self.root, "--dry-run")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("疑似密钥", r.stdout)
+
+    def test_install_hooks_sets_hookspath(self):
+        boot(self.root, git=True)
+        r = run_py(self.root, "install-hooks.py", self.root)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        hook = self.root / ".githooks" / "pre-commit"
+        self.assertTrue(hook.is_file())
+        self.assertIn("gate.py", hook.read_text(encoding="utf-8"))
+        p = subprocess.run(["git", "-C", str(self.root), "config", "core.hooksPath"],
+                           capture_output=True, text=True)
+        self.assertEqual(p.stdout.strip(), ".githooks")
+
     def test_tier_s_needs_no_docs(self):
         boot(self.root, tier="S", parts="tool")
         fill_params(self.root)

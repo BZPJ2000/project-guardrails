@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.0 — 2026-11-14
+
+**新增：影响面分析**
+
+- `scripts/impact.py`：拿当前 diff 算出必读文档、必查契约、必重跑单元，并标出未归属任何部件的改动
+
+**新增：防绕过**
+
+- `scripts/install-hooks.py`：把 params / contracts / index 装进 pre-commit（`--full` 可改为全量）
+- 绕过必须显式 `git commit --no-verify`，不会"悄悄通过"
+
+**新增：交付预检**
+
+- `scripts/publish.py`：密钥（正则规则）、>50MB 文件、未提交改动、缺 `.gitignore` 全部拦下
+- `--dry-run` 只审计不推送；审计失败时不上传任何内容
+- `.publishignore` 处理误报
+
+**工程**
+
+- 门禁报告按秒级唯一命名，同一秒多次运行不再互相覆盖
+- `.github/workflows/gate.yml`：CI 跑 32 项自测
+
 ## v2.0 — 2026-11-14
 
 **新增：关键词定位**

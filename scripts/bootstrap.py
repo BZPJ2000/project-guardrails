@@ -141,7 +141,8 @@ def main(argv=None):
 
     # --- copy the gate into the project so it can be moved/zipped standalone
     for f in ("gate.py", "checks.py", "checks_contract.py", "checks_nav.py",
-              "checks_scope.py", "common.py", "code-index.py"):
+              "checks_scope.py", "common.py", "code-index.py",
+              "impact.py", "publish.py", "install-hooks.py"):
         dst = root / "scripts" / f
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(HERE / f, dst)
@@ -160,6 +161,7 @@ def main(argv=None):
     print("  5. 动工前写 .agent/current-task.json 声明 inScope")
     print("  6. 在 tests/units.json 登记第一批单元")
     print("  7. python scripts/code-index.py . && python scripts/gate.py all . --record")
+    print("  8. python scripts/install-hooks.py .   # 装 pre-commit，绕过需显式 --no-verify")
     print("\n参数待填清单（由人回答，AI 不代填）:")
     schema = json.loads(render("params.schema.json.tpl", mapping))
     for k, v in (schema.get("params") or {}).items():

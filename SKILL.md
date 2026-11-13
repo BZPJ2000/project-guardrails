@@ -37,7 +37,10 @@ description: "多部件项目的防作假治理规程：开工先问清部件边
 8. **按单元实现**：文件开头写五行头；入口薄、逻辑纯、IO 隔离。
 9. **重建索引**：`python scripts/code-index.py .`。
 10. **跑门禁**：`python scripts/gate.py all . --record`，报告落 `reports/gate/`。
-11. **汇报**：只报 `changed / verified / evidence / risk`。
+11. **看影响面**：`python scripts/impact.py .`，确认必读文档、必查契约、必重跑单元。
+12. **提交**：装了 pre-commit 后自动拦；绕过要写 `--no-verify`，这本身留痕。
+13. **汇报**：只报 `changed / verified / evidence / risk`。
+14. **发布**：`python scripts/publish.py . --name X --dry-run` 先预检，通过再去掉 `--dry-run`。
 
 ## 路由
 
@@ -68,6 +71,16 @@ python scripts/gate.py scope .            # 改动是否越界 / 碰了受保护
 python scripts/gate.py evidence .         # 证据条数/耗时/新旧/paramsHash
 python scripts/gate.py docs|contracts|params|flows .
 ```
+
+## 交付与防绕过
+
+```bash
+python scripts/impact.py .                    # 改动影响面：文档/契约/要重跑的单元
+python scripts/install-hooks.py .             # pre-commit 跑 fast 子集，绕过需 --no-verify
+python scripts/publish.py . --name X --dry-run  # 推送预检：密钥/大文件/未提交/缺 .gitignore
+```
+
+审计不过就不上传，没有任何"确认一下继续"的口子。去掉 `--dry-run` 才建仓推送。
 
 ## 失败即停
 

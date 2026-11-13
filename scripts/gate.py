@@ -43,6 +43,10 @@ def write_report(root, gate, tier, findings):
         "findings": findings,
     }
     path = base / f"{stamp}-{gate}.json"
+    i = 1
+    while path.exists():  # 同一秒内多次运行也不覆盖历史报告
+        i += 1
+        path = base / f"{stamp}-{gate}-{i}.json"
     write_json(path, payload)
     return path
 

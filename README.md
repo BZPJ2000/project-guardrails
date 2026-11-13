@@ -92,6 +92,18 @@ python scripts/gate.py contracts .       # 契约与契约文档字段/版本一
 
 门禁拿 `git status` 对比：越出 `inScope`、命中 `outOfScope`、碰了受保护路径（`params.json` / `evidence` / `data`），全部失败。想扩范围必须改声明并说明理由——自己给自己发许可不算。
 
+## 交付与防绕过
+
+```bash
+python scripts/impact.py .                      # 这次改动牵连哪些文档/契约/单元
+python scripts/install-hooks.py .               # pre-commit 跑 fast 子集
+python scripts/publish.py . --name X --dry-run  # 推送预检，通过才真推
+```
+
+- **impact**：拿当前 diff 算出「必读文档 / 必查契约 / 必重跑单元」，改完先看这张表，别凭记忆。
+- **install-hooks**：把 params / contracts / index 三道快闸装进 pre-commit。绕过要写 `git commit --no-verify`，这本身就是一次明确的选择。
+- **publish**：上传前扫密钥（正则，不是裸字符串，避免 `task-` 被当成 `sk-`）、>50MB 文件、未提交改动、缺 `.gitignore`。**审计不过就不上传**，没有"确认一下继续"的口子。
+
 ## 分档
 
 | 档 | 用在哪 | 必做 |
@@ -117,10 +129,14 @@ project-guardrails/
 │  ├─ bootstrap.py           脚手架
 │  ├─ code-index.py          关键词 → 文件:行 索引
 │  ├─ gate.py                门禁 CLI（8 个闸门）
+│  ├─ impact.py              改动影响面
+│  ├─ publish.py             推送预检与建仓
+│  ├─ install-hooks.py       pre-commit
 │  ├─ checks*.py / common.py 各闸门实现
 │  └─ skill-index.py         全局技能索引
 ├─ assets/templates/         13 个模板
-├─ tests/test_gate.py        26 项自测，全部通过
+├─ tests/test_gate.py        32 项自测，全部通过
+├─ .github/workflows/gate.yml  CI 跑自测
 └─ CHANGELOG.md
 ```
 
@@ -131,7 +147,7 @@ Python 3.9+，标准库，无第三方包。范围检查需要 git。
 ## 自测
 
 ```bash
-python tests/test_gate.py    # 26 tests, OK
+python tests/test_gate.py    # 32 tests, OK
 ```
 
 ## License
