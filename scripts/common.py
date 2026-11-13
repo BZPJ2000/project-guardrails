@@ -1,13 +1,18 @@
 """Shared helpers for project-guardrails gates. Standard library only."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
 
 PLACEHOLDER = "__TBD__"
 TYPES = {"string", "int", "float", "bool", "array", "object"}
 NUMERIC = {"int", "float"}
+HEADER_KEYS = ["用途", "关键词", "输入", "输出", "文档"]
+CODE_EXTS = {".py", ".java", ".rs", ".cpp", ".cc", ".c", ".h", ".hpp", ".js", ".ts", ".go"}
+COMMENT_PREFIXES = ("#", "//", "/*", "*", "--", "<!--")
 
 
 def finding(gate, target, ok, msg):
@@ -20,6 +25,8 @@ def read_json(path):
 
 
 def write_json(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write("\n")
@@ -51,6 +58,145 @@ def load_config(root):
 
 def paths_of(cfg):
     return cfg.get("paths") or {}
+
+
+def section(cfg, name):
+    return cfg.get(name) or {}
+
+
+# ---------------------------------------------------------------- glob
+
+def glob_to_re(pattern):
+    """Glob with ** support: ** crosses directories, * stays in one segment."""
+    i, out = 0, ""
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "*":
+            if pattern[i:i + 2] == "**":
+                i += 2
+                if pattern[i:i + 1] == "/":
+                    i += 1
+                out += ".*"
+                continue
+            out += "[^/]*"
+        elif c == "?":
+            out += "[^/]"
+        else:
+            out += re.escape(c)
+        i += 1
+    return re.compile("^" + out + "$")
+
+
+def match_any(path, patterns):
+    p = str(path).replace("\\", "/")
+    return any(glob_to_re(g).match(p) for g in patterns or [])
+
+
+def rel_posix(root, path):
+    return str(Path(path).relative_to(Path(root))).replace("\\", "/")
+
+
+# -------------------------------------------------------------- header
+
+def parse_header(text, limit=40):
+    """Read the keyword header block from the first lines of a source file."""
+    fields = {}
+    head = "\n".join(text.splitlines()[:limit])
+    for line in head.splitlines():
+        s = line.strip()
+        for ch in COMMENT_PREFIXES:
+            if s.startswith(ch):
+                s = s[len(ch):].strip()
+        for k in HEADER_KEYS:
+            if k in fields:
+                continue
+            hit = False
+            for sep in (":", "：", "|", "="):
+                if s.startswith(k + sep):
+                    fields[k] = s[len(k) + 1:].strip()
+                    hit = True
+                    break
+            if hit:
+                break
+    return fields
+
+
+def comment_ratio(text):
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return 1.0, 0
+    hits = sum(1 for ln in lines if ln.strip().startswith(COMMENT_PREFIXES))
+    return hits / len(lines), len(lines)
+
+
+def source_files(root, cfg):
+    """All source files matched by index.sources, minus index.skip."""
+    icfg = section(cfg, "index")
+    root = Path(root)
+    patterns = icfg.get("sources") or ["apps/*/src/**"]
+    skip = icfg.get("skip") or []
+    found = []
+    for pat in patterns:
+        for p in sorted(root.glob(pat)):
+            if not p.is_file() or p.suffix.lower() not in CODE_EXTS:
+                continue
+            rel = rel_posix(root, p)
+            if skip and match_any(rel, skip):
+                continue
+            if rel not in found:
+                found.append(rel)
+    return found
+
+
+# ----------------------------------------------------------------- git
+
+def _git(root, *args):
+    try:
+        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.strip()
+
+
+def git_head(root):
+    return _git(root, "rev-parse", "--short", "HEAD")
+
+
+def git_changed(root):
+    """Changed + untracked paths (posix), or None when not a git repo."""
+    out = _git(root, "status", "--porcelain")
+    if out is None:
+        return None
+    paths = []
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        # [2:] tolerates both " M path" and a leading-stripped "M path"
+        p = line[2:].strip().strip('"')
+        if " -> " in p:
+            p = p.split(" -> ", 1)[1]
+        paths.append(p.replace("\\", "/"))
+    return paths
+
+
+# ---------------------------------------------------------------- hash
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return "sha256:" + h.hexdigest()
+
+
+def params_hash(root, cfg):
+    p = Path(root) / paths_of(cfg).get("paramsValues", "params/params.json")
+    if not p.is_file():
+        return None
+    return sha256_file(p)
 
 
 def unit_ids(root, cfg):

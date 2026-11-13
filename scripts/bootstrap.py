@@ -88,6 +88,7 @@ def main(argv=None):
         "PARTS": ", ".join(parts),
         "PARTS_JSON": json.dumps(parts, ensure_ascii=False),
         "PART_LIST": "\n".join(f"- `{p}`" for p in parts),
+        "INDEX_SOURCES": "src/**" if tier == "S" else "apps/*/src/**",
     }
 
     # --- part rows + per-part docs
@@ -135,9 +136,12 @@ def main(argv=None):
     touch_keep(root / ".agent" / "changes")
     created.append(write(root / ".agent" / "changes" / f"{date}-bootstrap.md",
                          f"# 初始化\n\n档位 {tier}，部件 {', '.join(parts)}。\n"))
+    created.append(write(root / ".agent" / "current-task.json.example",
+                         render("current-task.json.tpl", mapping)))
 
     # --- copy the gate into the project so it can be moved/zipped standalone
-    for f in ("gate.py", "checks.py", "checks_contract.py", "common.py"):
+    for f in ("gate.py", "checks.py", "checks_contract.py", "checks_nav.py",
+              "checks_scope.py", "common.py", "code-index.py"):
         dst = root / "scripts" / f
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(HERE / f, dst)
@@ -152,8 +156,10 @@ def main(argv=None):
     print("  1. 读 docs/module-map.md，填写各部件「职责 / 不负责 / 通信方式」")
     print("  2. 把 params/params.example.json 交给负责人填写成 params/params.json")
     print("  3. 补齐 contracts/ 与 docs/contracts/ 的字段（两边必须一致）")
-    print("  4. 在 tests/units.json 登记第一批单元")
-    print("  5. python scripts/gate.py all .")
+    print("  4. 做基线提交：git add -A && git commit -m \"chore: 初始化骨架\"")
+    print("  5. 动工前写 .agent/current-task.json 声明 inScope")
+    print("  6. 在 tests/units.json 登记第一批单元")
+    print("  7. python scripts/code-index.py . && python scripts/gate.py all . --record")
     print("\n参数待填清单（由人回答，AI 不代填）:")
     schema = json.loads(render("params.schema.json.tpl", mapping))
     for k, v in (schema.get("params") or {}).items():

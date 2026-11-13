@@ -11,6 +11,8 @@ from common import (
     doc_field_names,
     doc_version,
     finding,
+    git_head,
+    params_hash,
     paths_of,
     read_json,
     read_text,
@@ -183,6 +185,21 @@ def check_evidence(root, cfg):
             errs.append("缺少 command")
         if not isinstance(e.get("env"), dict) or not e["env"]:
             errs.append("缺少 env")
+
+        if ecfg.get("requireProvenance", False):
+            cv = e.get("codeVersion")
+            if not cv:
+                errs.append("缺少 codeVersion（证据必须绑定代码版本）")
+            ph = e.get("paramsHash")
+            cur = params_hash(root, cfg)
+            if not ph:
+                errs.append("缺少 paramsHash")
+            elif cur and ph != cur:
+                errs.append("paramsHash 与当前 params.json 不一致（参数变了，需重跑）")
+            if ecfg.get("requireCurrentCommit") and cv:
+                head = git_head(root)
+                if head and str(cv) != head:
+                    errs.append(f"codeVersion {cv} != 当前提交 {head}（需重跑）")
 
         newest = 0.0
         for s in [u.get("entry")] + list(u.get("source") or []):

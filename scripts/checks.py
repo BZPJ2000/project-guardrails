@@ -1,15 +1,16 @@
-"""Docs and params gates, plus the gate registry.
+"""Docs, params and navigation gates, plus the gate registry.
 
-Contract/evidence/flow checks live in checks_contract.py and are re-exported
-here so callers only import one module.
+Contract/evidence/flow checks live in checks_contract.py; navigation checks in
+checks_nav.py; scope checks in checks_scope.py. All are re-exported here so
+callers import one module.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from common import (
-    PLACEHOLDER,
     NUMERIC,
+    PLACEHOLDER,
     count_lines,
     finding,
     load_config,
@@ -18,6 +19,8 @@ from common import (
     read_text,
 )
 from checks_contract import check_contracts, check_evidence, check_flows  # noqa: F401
+from checks_nav import check_index  # noqa: F401
+from checks_scope import check_scope  # noqa: F401
 
 PART_HEADINGS = ["## 用途", "## 责任边界", "## 变更影响", "## 最后更新"]
 
@@ -145,8 +148,8 @@ def check_params(root, cfg):
 
 TIER_GATES = {
     "S": ["params", "evidence"],
-    "M": ["docs", "contracts", "params", "evidence"],
-    "L": ["docs", "contracts", "params", "evidence", "flows"],
+    "M": ["docs", "contracts", "params", "evidence", "index"],
+    "L": ["docs", "contracts", "params", "evidence", "index", "scope", "flows"],
 }
 
 RUNNERS = {
@@ -154,6 +157,8 @@ RUNNERS = {
     "contracts": check_contracts,
     "params": check_params,
     "evidence": check_evidence,
+    "index": check_index,
+    "scope": check_scope,
     "flows": check_flows,
 }
 

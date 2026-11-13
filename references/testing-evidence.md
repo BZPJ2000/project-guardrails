@@ -45,9 +45,18 @@
   "durationMs": 42,
   "command": "python tests/runUnit.py algo/sortTaskPriority",
   "env": { "language": "python", "version": "3.12.4", "os": "Windows-11" },
+  "codeVersion": "62227a4",
+  "paramsHash": "sha256:9f2c…",
   "exitCode": 0,
   "cases": { "total": 7, "passed": 7, "failed": 0, "boundary": 2, "invalidInput": 2 }
 }
+```
+
+`paramsHash` 是 `params/params.json` 的 sha256。生成证据的脚本自己算、自己写，人不改。
+
+```python
+import hashlib, json, pathlib
+h = "sha256:" + hashlib.sha256(pathlib.Path("params/params.json").read_bytes()).hexdigest()
 ```
 
 ## 合格线（门禁逐条检查）
@@ -63,6 +72,12 @@
 | 证据 mtime | 必须晚于该单元所有源文件的 mtime | 失败（视为未验证） |
 | 证据年龄 | ≤ `maxAgeHours`（默认 720） | 失败 |
 | `env` + `command` | 必须存在 | 失败（无法复现的证据不算证据） |
+| `paramsHash` | 必须等于当前 `params.json` 的 sha256 | 失败（参数变了，结果作废） |
+| `codeVersion` | 必须存在 | 失败 |
+
+**参数一改，所有证据立刻失效**，这是刻意的：优先级权重变了，之前那份排序结果就不再代表现在的系统。
+
+`evidence.requireCurrentCommit = true` 时还会比对 `codeVersion` 是否等于当前 HEAD——打开后，每次提交都得重跑证据。多人协作建议开，单人迭代建议留关。
 
 任一条不过，该单元状态为"未验证"，任何汇报里不许出现"完成"。
 

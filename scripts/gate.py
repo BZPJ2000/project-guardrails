@@ -2,19 +2,49 @@
 """project-guardrails gate. Exit 0 = all pass, 1 = at least one failure.
 
     python gate.py all <project-root>
-    python gate.py docs|contracts|params|evidence|flows <project-root> [--json]
+    python gate.py docs|contracts|params|evidence|index|scope|flows <root> [--json] [--record]
 """
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from checks import TIER_GATES, load_config, run_gate  # noqa: E402
+from common import (  # noqa: E402
+    git_changed,
+    git_head,
+    load_config,
+    params_hash,
+    paths_of,
+    write_json,
+)
+from checks import TIER_GATES, run_gate  # noqa: E402
 
-GATES = ["all", "docs", "contracts", "params", "evidence", "flows"]
+GATES = ["all", "docs", "contracts", "params", "evidence", "index", "scope", "flows"]
+
+
+def write_report(root, gate, tier, findings):
+    cfg, _ = load_config(root)
+    base = Path(root) / paths_of(cfg or {}).get("reports", "reports/gate")
+    stamp = _dt.datetime.now().astimezone().strftime("%Y%m%dT%H%M%S")
+    fails = [f for f in findings if not f["ok"]]
+    payload = {
+        "generatedAt": _dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "gate": gate,
+        "tier": tier,
+        "passed": len(findings) - len(fails),
+        "failed": len(fails),
+        "commit": git_head(root),
+        "paramsHash": params_hash(root, cfg or {}),
+        "changedFiles": git_changed(root) or [],
+        "findings": findings,
+    }
+    path = base / f"{stamp}-{gate}.json"
+    write_json(path, payload)
+    return path
 
 
 def main(argv=None):
@@ -27,6 +57,7 @@ def main(argv=None):
     ap.add_argument("root", nargs="?", default=".")
     ap.add_argument("--json", action="store_true", help="machine readable output")
     ap.add_argument("--quiet", action="store_true", help="only print failures")
+    ap.add_argument("--record", action="store_true", help="落盘报告到 reports/gate/")
     args = ap.parse_args(argv)
 
     root = Path(args.root).resolve()
@@ -36,6 +67,8 @@ def main(argv=None):
     cfg, _ = load_config(root)
     tier = (cfg or {}).get("tier", "?")
 
+    report = write_report(root, args.gate, tier, findings) if args.record else None
+
     if args.json:
         print(json.dumps({
             "root": str(root),
@@ -43,6 +76,7 @@ def main(argv=None):
             "tier": tier,
             "total": len(findings),
             "failed": len(fails),
+            "report": str(report) if report else None,
             "findings": findings,
         }, ensure_ascii=False, indent=2))
         return 1 if fails else 0
@@ -58,6 +92,8 @@ def main(argv=None):
             target = prefix + target
         print(f"  [{mark}] {target} - {f['msg']}")
     print(f"结果: 通过 {len(findings) - len(fails)} / 失败 {len(fails)}")
+    if report:
+        print(f"报告: {report}")
     if fails:
         print("门禁未通过：停下，把上面的失败项交回给人，不许绕过。")
         return 1

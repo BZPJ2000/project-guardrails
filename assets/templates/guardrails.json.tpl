@@ -13,13 +13,42 @@
     "paramsSchema": "params/params.schema.json",
     "paramsValues": "params/params.json",
     "units": "tests/units.json",
-    "evidence": "tests/evidence"
+    "evidence": "tests/evidence",
+    "reports": "reports/gate"
+  },
+  "policy": {
+    "requireTask": false,
+    "taskFile": ".agent/current-task.json",
+    "protected": [
+      "params/params.json",
+      "**/.env",
+      "**/*.key",
+      "**/*.pem"
+    ],
+    "exempt": [
+      "docs/code-index.md",
+      "docs/code-index.json",
+      "tests/evidence/**",
+      "reports/**",
+      ".agent/**",
+      "data/**"
+    ]
+  },
+  "index": {
+    "sources": ["{{INDEX_SOURCES}}"],
+    "skip": ["**/__pycache__/**"],
+    "out": "docs/code-index.md",
+    "json": "docs/code-index.json",
+    "minCommentRatio": 0.03,
+    "minCommentRatioLines": 50
   },
   "evidence": {
     "minCases": 5,
     "requireBoundary": true,
     "requireInvalidInput": true,
     "maxAgeHours": 720,
-    "requireNewerThanSource": true
+    "requireNewerThanSource": true,
+    "requireProvenance": true,
+    "requireCurrentCommit": false
   }
 }
