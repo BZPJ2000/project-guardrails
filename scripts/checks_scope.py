@@ -16,15 +16,18 @@ def check_scope(root, cfg):
     task_path = root / pcfg.get("taskFile", TASK_FILE)
 
     changed = git_changed(root)
+    tier = str(cfg.get("tier", "M"))
     if changed is None:
+        if tier == "S":
+            return [finding("scope", ".", True, "S 档且非 git 仓库：不要求范围锁定")]
         return [finding("scope", ".", False, "不是 git 仓库，无法判定改动范围")]
 
     protected = pcfg.get("protected") or []
     exempt = pcfg.get("exempt") or []
-    require_task = bool(pcfg.get("requireTask", False))
+    require_task = bool(pcfg.get("requireTask", False)) and tier != "S"
 
     if not task_path.is_file():
-        if require_task:
+        if require_task and changed:
             return [finding("scope", TASK_FILE, False,
                             "未声明任务范围（policy.requireTask=true）：先写 .agent/current-task.json")]
         hit = [p for p in changed if match_any(p, protected) and not match_any(p, exempt)]

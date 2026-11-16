@@ -23,7 +23,8 @@ from common import (  # noqa: E402
 )
 from checks import TIER_GATES, run_gate  # noqa: E402
 
-GATES = ["all", "docs", "contracts", "params", "evidence", "index", "scope", "flows"]
+GATES = ["all", "docs", "contracts", "params", "evidence", "index",
+         "task", "design", "scope", "flows"]
 
 
 def write_report(root, gate, tier, findings):

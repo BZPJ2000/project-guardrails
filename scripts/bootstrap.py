@@ -122,6 +122,11 @@ def main(argv=None):
     if tier == "L":
         created.append(write(root / "docs" / "flows" / "deploy.md",
                              render("flow-deploy.md.tpl", mapping)))
+        created.append(write(root / "docs" / "flows" / "rollback.md",
+                             render("flow-rollback.md.tpl", mapping)))
+        for name, tpl in (("modules", "design-modules.md.tpl"), ("flows", "design-flows.md.tpl"),
+                          ("data", "design-data.md.tpl"), ("api", "design-api.md.tpl")):
+            created.append(write(root / "docs" / "design" / f"{name}.md", render(tpl, mapping)))
 
     created.append(write(root / "params" / "params.schema.json",
                          render("params.schema.json.tpl", mapping)))
@@ -141,8 +146,9 @@ def main(argv=None):
 
     # --- copy the gate into the project so it can be moved/zipped standalone
     for f in ("gate.py", "checks.py", "checks_contract.py", "checks_nav.py",
-              "checks_scope.py", "common.py", "code-index.py",
-              "impact.py", "publish.py", "install-hooks.py"):
+              "checks_scope.py", "checks_task.py", "checks_design.py",
+              "common.py", "tasklib.py", "code-index.py",
+              "task.py", "release.py", "impact.py", "publish.py", "install-hooks.py"):
         dst = root / "scripts" / f
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(HERE / f, dst)
@@ -158,10 +164,12 @@ def main(argv=None):
     print("  2. 把 params/params.example.json 交给负责人填写成 params/params.json")
     print("  3. 补齐 contracts/ 与 docs/contracts/ 的字段（两边必须一致）")
     print("  4. 做基线提交：git add -A && git commit -m \"chore: 初始化骨架\"")
-    print("  5. 动工前写 .agent/current-task.json 声明 inScope")
+    print("  5. 动工前 python scripts/task.py start \"<这一件事>\"  --files \"<inScope>\"")
     print("  6. 在 tests/units.json 登记第一批单元")
     print("  7. python scripts/code-index.py . && python scripts/gate.py all . --record")
     print("  8. python scripts/install-hooks.py .   # 装 pre-commit，绕过需显式 --no-verify")
+    print("  9. 写 .agent/tasks/<id>.md（改了什么/为什么改/影响哪些模块/如何验证）")
+    print(" 10. python scripts/task.py finish   # 门禁+汇总+提交，一个任务一个 commit")
     print("\n参数待填清单（由人回答，AI 不代填）:")
     schema = json.loads(render("params.schema.json.tpl", mapping))
     for k, v in (schema.get("params") or {}).items():

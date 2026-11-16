@@ -17,7 +17,7 @@
     "reports": "reports/gate"
   },
   "policy": {
-    "requireTask": false,
+    "requireTask": true,
     "taskFile": ".agent/current-task.json",
     "protected": [
       "params/params.json",
@@ -32,6 +32,25 @@
       "reports/**",
       ".agent/**",
       "data/**"
+    ]
+  },
+  "task": {
+    "requireTask": true,
+    "tasksDir": ".agent/tasks",
+    "maxFiles": 15,
+    "maxSymbols": 20,
+    "rewriteDeletionRatio": 0.6,
+    "rewriteMinSymbols": 3,
+    "rewriteMaxOverlap": 0.6,
+    "reviewSections": ["改了什么", "为什么改", "影响哪些模块", "如何验证"]
+  },
+  "design": {
+    "required": "L",
+    "files": [
+      "docs/design/modules.md",
+      "docs/design/flows.md",
+      "docs/design/data.md",
+      "docs/design/api.md"
     ]
   },
   "index": {

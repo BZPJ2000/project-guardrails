@@ -19,8 +19,10 @@ from common import (
     read_text,
 )
 from checks_contract import check_contracts, check_evidence, check_flows  # noqa: F401
+from checks_design import check_design  # noqa: F401
 from checks_nav import check_index  # noqa: F401
 from checks_scope import check_scope  # noqa: F401
+from checks_task import check_task  # noqa: F401
 
 PART_HEADINGS = ["## 用途", "## 责任边界", "## 变更影响", "## 最后更新"]
 
@@ -32,6 +34,8 @@ def check_docs(root, cfg):
     max_doc = int(cfg.get("maxDocLines", 120))
     max_agents = int(cfg.get("maxAgentsLines", 80))
     parts = cfg.get("parts") or []
+    if str(cfg.get("tier", "M")) == "S":
+        parts = []  # S 档不要求分部件文档
 
     agents = root / "AGENTS.md"
     if not agents.is_file():
@@ -147,9 +151,11 @@ def check_params(root, cfg):
 
 
 TIER_GATES = {
-    "S": ["params", "evidence"],
-    "M": ["docs", "contracts", "params", "evidence", "index"],
-    "L": ["docs", "contracts", "params", "evidence", "index", "scope", "flows"],
+    # 默认全开：所有闸门都执行。档位只在闸门内部决定"这条要求适不适用"，
+    # 不适用时返回 SKIP（可见），不会静默跳过。
+    "S": ["docs", "contracts", "params", "evidence", "index", "task", "design", "scope", "flows"],
+    "M": ["docs", "contracts", "params", "evidence", "index", "task", "design", "scope", "flows"],
+    "L": ["docs", "contracts", "params", "evidence", "index", "task", "design", "scope", "flows"],
 }
 
 RUNNERS = {
@@ -158,6 +164,8 @@ RUNNERS = {
     "params": check_params,
     "evidence": check_evidence,
     "index": check_index,
+    "task": check_task,
+    "design": check_design,
     "scope": check_scope,
     "flows": check_flows,
 }

@@ -17,3 +17,6 @@ node_modules/
 # 运行产物只保留目录
 data/**/*
 !data/.gitkeep
+
+# 任务临时状态不进版本库（任务记录 .agent/tasks/ 要进）
+.agent/current-task.json

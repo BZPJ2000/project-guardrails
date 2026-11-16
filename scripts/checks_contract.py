@@ -81,6 +81,8 @@ def check_contracts(root, cfg):
     units = unit_ids(root, cfg)
 
     if not cdir.is_dir():
+        if str(cfg.get("tier", "M")) == "S":
+            return [finding("contracts", "contracts/", True, "S 档不要求契约文件")]
         return [finding("contracts", "contracts/", False, "缺少 contracts/ 目录")]
     files = sorted(cdir.glob("*.json"))
     if not files:
@@ -224,6 +226,9 @@ def check_flows(root, cfg):
     max_doc = int(cfg.get("maxDocLines", 120))
     d = root / paths_of(cfg).get("flows", "docs/flows")
     if not d.is_dir():
+        if str(cfg.get("tier", "M")) != "L":
+            return [finding("flows", "docs/flows/", True,
+                            f"档位 {cfg.get('tier')} 不要求流程文档（L 档才强制）")]
         return [finding("flows", "docs/flows/", False, "L 档要求 docs/flows/")]
     files = sorted(d.glob("*.md"))
     if not files:

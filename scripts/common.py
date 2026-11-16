@@ -1,6 +1,7 @@
 """Shared helpers for project-guardrails gates. Standard library only."""
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -129,6 +130,16 @@ def comment_ratio(text):
     return hits / len(lines), len(lines)
 
 
+def _glob_recursive(root, pattern):
+    """Path.glob('dir/**') yields directories only; expand it ourselves."""
+    if pattern.endswith("/**"):
+        prefix = pattern[:-3]
+        for d in root.glob(prefix):
+            yield from (d.rglob("*") if d.is_dir() else [d])
+    else:
+        yield from root.glob(pattern)
+
+
 def source_files(root, cfg):
     """All source files matched by index.sources, minus index.skip."""
     icfg = section(cfg, "index")
@@ -137,7 +148,7 @@ def source_files(root, cfg):
     skip = icfg.get("skip") or []
     found = []
     for pat in patterns:
-        for p in sorted(root.glob(pat)):
+        for p in sorted(_glob_recursive(root, pat)):
             if not p.is_file() or p.suffix.lower() not in CODE_EXTS:
                 continue
             rel = rel_posix(root, p)
@@ -245,3 +256,58 @@ def doc_version(text):
         if s:
             return s.strip("`").strip()
     return None
+
+
+# ------------------------------------------------------ symbols / 改动指纹
+
+_SYM = {
+    ".java": [re.compile(r"^\s*(?:public|protected|private)?\s*(?:static\s+)?(?:final\s+)?"
+                         r"(?:abstract\s+)?(?:class|interface|enum|record)\s+(\w+)"),
+              re.compile(r"^\s*(?:public|protected|private)\s+(?:static\s+)?(?:final\s+)?"
+                         r"[\w<>\[\],\.\s]+?\s+(\w+)\s*\(")],
+    ".rs": [re.compile(r"^\s*(?:pub\s+)?(?:async\s+)?(?:const\s+)?(?:unsafe\s+)?fn\s+(\w+)"),
+            re.compile(r"^\s*(?:pub\s+)?(?:struct|enum|trait)\s+(\w+)")],
+    ".js": [re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+(\w+)"),
+            re.compile(r"^\s*(?:export\s+)?(?:default\s+)?class\s+(\w+)")],
+    ".ts": [re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+(\w+)"),
+            re.compile(r"^\s*(?:export\s+)?(?:default\s+)?class\s+(\w+)")],
+    ".go": [re.compile(r"^func\s+(?:\([^)]*\)\s*)?(\w+)")],
+}
+_CPP = [re.compile(r"^\s*(?:class|struct)\s+(\w+)"),
+        re.compile(r"^\s*(?:template\s*<[^>]*>\s*)?[\w:<>,\*&\s]+?\s+(\w+)\s*\([^;]*\)\s*(?:const\s*)?\{?\s*$")]
+for _e in (".c", ".h", ".cpp", ".cc", ".hpp"):
+    _SYM[_e] = _CPP
+_BANNED = {"if", "for", "while", "switch", "return", "else", "catch", "sizeof", "new", "delete"}
+
+
+def extract_symbols(text, path):
+    """Top-level symbols as (name, start_line). Python exact; others heuristic."""
+    ext = Path(path).suffix.lower()
+    if ext == ".py":
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return []
+        return [(n.name, n.lineno) for n in tree.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    rules = _SYM.get(ext) or []
+    out = []
+    for i, line in enumerate(text.splitlines(), 1):
+        for rx in rules:
+            m = rx.match(line)
+            if m and m.group(1) not in _BANNED:
+                out.append((m.group(1), i))
+                break
+    return out
+
+
+def symbol_hashes(text, path):
+    """name -> content hash. Range = this symbol's line to the next symbol's line."""
+    lines = text.splitlines()
+    syms = extract_symbols(text, path)
+    out = {}
+    for idx, (name, start) in enumerate(syms):
+        end = syms[idx + 1][1] - 1 if idx + 1 < len(syms) else len(lines)
+        body = "\n".join(lines[start - 1:end])
+        out[name] = hashlib.sha1(body.encode("utf-8", "replace")).hexdigest()[:12]
+    return out

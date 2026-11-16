@@ -1,20 +1,22 @@
 # project-guardrails
 
-给 AI 编码助手用的一套**项目护栏**：管的是「谁有权改什么、改完拿什么证明、代码在哪一行」，不是「怎么写代码」。
+给 AI 编码助手用的一套**项目护栏**：管的是「谁有权改什么、改完拿什么证明、出问题退到哪一行」，不是「怎么写代码」。
 
-v2 起多了三件事：**关键词定位**（一句话 → 文件:行）、**改动范围锁定**（越界即失败）、**证据指纹**（参数一改，旧证据全废）。
+v4 起多了三件事：**任务制**（一次一件事、一个任务一个提交、回退只退这一个）、**改动上限**（文件数/函数数/禁止整文件重写）、**交付门槛**（设计说明书 + 变更说明 + 回滚方案）。
 
 ## 拦什么
 
 | 症状 | 护栏做什么 |
 |---|---|
-| 改这里坏那里 | 部件隔离 + 变更影响表 + 契约变更触发全量回归 |
-| AI 直接改数据库字段假装完成 | 派生字段只能重跑产生它的单元；没登记/没证据就失败 |
-| AI 自己编数值（尺寸、阈值、权重） | `params.json` 只有人能写，缺了留 `__TBD__` 并阻断 |
-| 说"测试通过"但拿不出证据 | 证据落盘，绑 `paramsHash` 与代码版本，参数一改全部失效 |
-| 改了参数却没重算 | 证据里的 `paramsHash` 对不上，门禁直接拦 |
-| 代码找不到在哪 | 每个源文件带五行关键词头 + 自动索引，三次跳转定位到行 |
-| 顺手把无关文件也改了 | `current-task.json` 锁定 inScope，越界即失败 |
+| AI 整块接手，一次改二十个文件 | `task.py` 声明范围；单任务 ≤15 文件 / ≤20 符号，整文件重写直接失败 |
+| 改了前面忘后面 | 一次只做一个任务，变更说明四节不写不算完成 |
+| 回退版本退太多 | 一个任务一个 commit，`task.py revert <id>` 只撤这一个 |
+| 出问题不知道怎么查 | 每个源文件五行关键词头 + 关键词索引，三次跳转定位到行 |
+| AI 直接改数据库假装完成 | 派生字段只能重跑产生它的单元；没登记/没证据就失败 |
+| AI 自己编数值 | `params.json` 只有人能写，缺了留 `__TBD__` 并阻断 |
+| 改了参数却没重算 | 证据绑 `paramsHash`，参数一改全部失效 |
+| 没设计就开始大规模编码 | L 档要求 `docs/design/` 四件套，缺了连任务都开不了 |
+| 没回滚方案就上线 | `release.py` 检查 rollback 文档与命令，缺了不许打 tag |
 
 ## 快速开始
 
@@ -22,132 +24,123 @@ v2 起多了三件事：**关键词定位**（一句话 → 文件:行）、**�
 # 1. 装到技能目录
 git clone https://github.com/BZPJ2000/project-guardrails.git ~/.agents/skills/project-guardrails
 
-# 2. 初始化项目（S=小脚本 / M=单端应用 / L=多端上线）
+# 2. 初始化（S=小脚本 / M=单端应用 / L=多端上线）
 python ~/.agents/skills/project-guardrails/scripts/bootstrap.py --root . --tier M --parts algo,backend --git
 
-# 3. 做基线提交（范围检查要靠它）
+# 3. 人填参数 → 基线提交
 git add -A && git commit -m "chore: 初始化骨架"
 
-# 4. 人填参数 → 写 current-task.json → 写代码 → 建索引 → 跑门禁
+# 4. 一个任务从头到尾
+python scripts/task.py start "把优先级权重改成从 params 读" --files "apps/algo/src/**"
+#   …改代码、补测试、重建索引…
 python scripts/code-index.py .
 python scripts/gate.py all . --record
+#   …写 .agent/tasks/<id>.md 四节…
+python scripts/task.py finish          # 门禁 + 汇总 + 一次提交
 ```
 
-## 源文件头（门禁强制）
+## 任务制
 
-```python
-"""
-用途: 按优先级与依赖排序任务
-关键词: 排序, 优先级, 拓扑, scheduleSeq, sortTaskPriority
-输入: contracts/algo.json
-输出: scheduleSeq (int[])，从 1 连续
-文档: docs/parts/algo.md
-"""
+```bash
+task.py start "<这一件事>" --files "<inScope>"
+task.py status                 # 当前任务改了多少文件/多少符号
+task.py finish                 # 全绿才提交，一次任务一个 commit
+task.py revert <task-id>       # 只撤这一个任务
 ```
 
-`code-index.py` 会把这些关键词和符号（函数/类名）编成一张表：
+- 一个任务 = 一个 `current-task.json` + 一份 `.agent/tasks/<id>.md` + 一条日志 + **一个 commit**
+- `finish` 的提交信息带 `task(<id>):`，`revert` 按它找提交
+- 改动指纹精确到函数：Python 走 AST，Java/Rust/C++/Go/TS 按符号行近似（不承诺代码块级）
+
+**改动上限**（默认，可改 `guardrails.json`）：
+
+| 项 | 默认 |
+|---|---|
+| 单任务文件数 | 15 |
+| 单任务符号数 | 20 |
+| 整文件重写 | 禁止（删除 ≥60% 或新旧内容行重合 <60%，且涉及 ≥3 个符号） |
+
+## 变更说明（四节）
+
+`.agent/tasks/<id>.md`：
 
 ```markdown
-| 关键词 / 符号 | 文件:行 | 职责 |
-|---|---|---|
-| `排序` | `apps/algo/src/sortTask.py:1` | 按优先级与依赖排序任务 |
-| `sort_tasks` | `apps/algo/src/sortTask.py:42` | 按优先级与依赖排序任务 |
+## 改了什么
+## 为什么改
+## 影响哪些模块
+## 如何验证
 ```
 
-查代码是三层跳：`module-map`（哪个部件）→ `code-index`（哪个文件哪行）→ 文件头（不变量确认）。
+缺任一节，`finish` 与 `gate task` 都不过。第四节要写命令与证据路径，不能写"已测试"。
 
 ## 门禁
 
 ```bash
-python scripts/gate.py all . --record    # 按档位全跑，报告存 reports/gate/
-python scripts/gate.py index .           # 关键词头 + 索引新鲜度 + 注释率
-python scripts/gate.py scope .           # 改动是否越界 / 碰了受保护路径
-python scripts/gate.py evidence .        # 条数/耗时/新旧/paramsHash
-python scripts/gate.py params .          # 参数台账
-python scripts/gate.py docs .            # 文档行数/小节/索引
-python scripts/gate.py contracts .       # 契约与契约文档字段/版本一致
+python scripts/gate.py all . --record   # 九个闸门 + 报告落 reports/gate/
+python scripts/gate.py task .           # 任务范围 / 改动上限 / 变更说明 / 日志
+python scripts/gate.py design .         # 设计说明书四件套（L 档）
+python scripts/gate.py scope .          # 越界与受保护路径
+python scripts/gate.py index .          # 五行头 + 索引新鲜度 + 注释率
+python scripts/gate.py evidence .       # 条数/耗时/新旧/paramsHash
+python scripts/gate.py docs|contracts|params|flows .
 ```
 
-任一闸门失败退出码 1。门禁脚本会复制进项目 `scripts/`，可随项目打包迁移。
+闸门默认全开；档位只在闸门内部决定某条要求适不适用，不适用时给 **SKIP**（可见），不静默跳过。
 
-**证据合格线**（逐条检查）：
-
-- `exitCode == 0`，通过率 100%
-- 用例 ≥5（含边界 ≥1、非法输入 ≥1）
-- 耗时 ≤ 单元 `budgetMs`
-- 证据比源码新，且年龄 ≤720h
-- `paramsHash` 等于当前 `params.json` 的 sha256
-- 带 `command` 与 `env`
-
-## 范围锁定
-
-```json
-// .agent/current-task.json
-{
-  "task": "把优先级权重改成从 params 读取",
-  "inScope": ["apps/algo/src/**", "params/params.schema.json"],
-  "outOfScope": ["apps/backend/**"]
-}
-```
-
-门禁拿 `git status` 对比：越出 `inScope`、命中 `outOfScope`、碰了受保护路径（`params.json` / `evidence` / `data`），全部失败。想扩范围必须改声明并说明理由——自己给自己发许可不算。
-
-## 交付与防绕过
+## 发布
 
 ```bash
-python scripts/impact.py .                      # 这次改动牵连哪些文档/契约/单元
-python scripts/install-hooks.py .               # pre-commit 跑 fast 子集
-python scripts/publish.py . --name X --dry-run  # 推送预检，通过才真推
+python scripts/release.py --version 1.2.0          # dry-run
+python scripts/release.py --version 1.2.0 --apply  # 打 tag
 ```
 
-- **impact**：拿当前 diff 算出「必读文档 / 必查契约 / 必重跑单元」，改完先看这张表，别凭记忆。
-- **install-hooks**：把 params / contracts / index 三道快闸装进 pre-commit。绕过要写 `git commit --no-verify`，这本身就是一次明确的选择。
-- **publish**：上传前扫密钥（正则，不是裸字符串，避免 `task-` 被当成 `sk-`）、>50MB 文件、未提交改动、缺 `.gitignore`。**审计不过就不上传**，没有"确认一下继续"的口子。
+发版前强制检查：工作区干净、`CHANGELOG` 有该版本、`docs/flows/rollback.md` 里有可执行回滚命令、门禁全绿。
 
 ## 分档
 
-| 档 | 用在哪 | 必做 |
+| 档 | 用在哪 | 差异 |
 |---|---|---|
-| S | 单脚本、小工具 | 目录 + params + 测试 + 证据 |
-| M | 单端应用 | S + 短文档 + 契约 + 关键词索引 |
-| L | 多端 / 多人 / 上线 | M + 流程文档 + 范围锁定 |
+| S | 单脚本、小工具 | 契约/分部件文档/设计说明书 SKIP，任务制照旧 |
+| M | 单端应用 | 全套文档 + 契约 + 索引 + 任务制 |
+| L | 多端 / 多人 / 上线 | + 流程文档 + 设计说明书 + 回滚方案 |
 
 ## 结构
 
 ```
 project-guardrails/
-├─ SKILL.md                  七条铁律 + 分档 + 工作流 + 路由
-├─ references/               13 篇短文档，每篇一个决策
-│  ├─ navigation.md          关键词定位体系（头注释 + 索引）
-│  ├─ annotations.md         注释规范（文件头/函数/为什么）
-│  ├─ scope-lock.md          任务范围锁定与受保护路径
-│  ├─ anti-fake.md           SSOT、派生字段禁改、六个作假信号
-│  ├─ contracts.md / params.md / testing-evidence.md
+├─ SKILL.md                  八条铁律 + 分档 + 工作流 + 路由
+├─ references/               14 篇短文档，每篇一个决策
+│  ├─ task-loop.md           任务循环与回退颗粒度
+│  ├─ scope-lock.md          改动范围与受保护路径
+│  ├─ navigation.md          关键词定位体系
+│  ├─ annotations.md         注释规范
+│  ├─ anti-fake.md / contracts.md / params.md / testing-evidence.md
 │  ├─ docs-system.md / layout.md / change-impact.md
 │  └─ flows.md / bootstrap-session.md / discovery.md
-├─ scripts/
-│  ├─ bootstrap.py           脚手架
-│  ├─ code-index.py          关键词 → 文件:行 索引
-│  ├─ gate.py                门禁 CLI（8 个闸门）
+├─ scripts/                  15 个
+│  ├─ task.py                任务：start / status / finish / revert
+│  ├─ gate.py                门禁 CLI（9 个闸门）
+│  ├─ release.py             版本 + 回滚前置校验
+│  ├─ code-index.py          关键词 → 文件:行
 │  ├─ impact.py              改动影响面
-│  ├─ publish.py             推送预检与建仓
+│  ├─ publish.py             推送预检
 │  ├─ install-hooks.py       pre-commit
-│  ├─ checks*.py / common.py 各闸门实现
-│  └─ skill-index.py         全局技能索引
-├─ assets/templates/         13 个模板
-├─ tests/test_gate.py        32 项自测，全部通过
-├─ .github/workflows/gate.yml  CI 跑自测
+│  ├─ bootstrap.py           脚手架
+│  └─ checks*.py / common.py / tasklib.py / skill-index.py
+├─ assets/templates/         17 个模板（含设计说明书四件套、回滚流程）
+├─ tests/test_gate.py        36 项自测，全部通过
+├─ .github/workflows/gate.yml
 └─ CHANGELOG.md
 ```
 
 ## 依赖
 
-Python 3.9+，标准库，无第三方包。范围检查需要 git。
+Python 3.9+，标准库，无第三方包。范围/任务/回退功能需要 git。
 
 ## 自测
 
 ```bash
-python tests/test_gate.py    # 32 tests, OK
+python tests/test_gate.py    # 36 tests, OK
 ```
 
 ## License
